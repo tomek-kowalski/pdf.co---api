@@ -1,0 +1,156 @@
+$pdf->SetAuthor($person);
+$date = date('Ymd_His');
+$filename = "The_offer_made_by_{$person}_on_{$date}.pdf";
+$title = $filename;
+$pdf->SetTitle($title);
+
+$filename = str_replace(' ', '_', $filename);
+
+$localFilePath = ROOT . DIRECTORY_SEPARATOR . "temp" . DIRECTORY_SEPARATOR . $filename;
+
+$pdf->Output($localFilePath, 'F');
+
+$baseUrl = site_url() . '/wp-content/plugins/printer/';
+$fileUrl = $baseUrl . "temp/{$filename}";
+
+$apiKey = "";
+
+$profileSettings = "{ 'ImageOptimizationFormat': 'JPEG', 'JPEGQuality': 25, 'ResampleImages': true, 'ResamplingResolution': 120, 'GrayscaleImages': false }";
+
+$url = "https://api.pdf.co/v1/pdf/optimize"; 
+
+$parameters = array();
+$parameters["password"] = $password;
+$parameters["url"] = $fileUrl;
+$parameters["profiles"] = $profileSettings;
+$parameters["async"] = true; 
+
+
+$data = json_encode($parameters);
+
+$curl = curl_init();
+curl_setopt($curl, CURLOPT_HTTPHEADER, array("x-api-key: " . $apiKey, "Content-type: application/json"));
+curl_setopt($curl, CURLOPT_URL, $url);
+curl_setopt($curl, CURLOPT_POST, true);
+curl_setopt($curl, CURLOPT_RETURNTRANSFER, 1);
+curl_setopt($curl, CURLOPT_POSTFIELDS, $data);
+
+$result = curl_exec($curl);
+
+if (curl_errno($curl) == 0)
+{
+    $status_code = curl_getinfo($curl, CURLINFO_HTTP_CODE);
+    
+    if ($status_code == 200)
+    {
+        $json = json_decode($result, true);
+        
+        if (!isset($json["error"]) || $json["error"] == false)
+        {
+            $resultFileUrl = $json["url"];
+
+            $jobId = $json["jobId"];
+            
+            do
+            {
+                $status = CheckJobStatus($jobId, $apiKey); 
+                
+                echo "<p>" . date(DATE_RFC2822) . ": " . $status . "</p>";
+                
+                if ($status == "success")
+                {
+
+                    echo "<div><h2>Conversion Result:</h2><a href='" . $resultFileUrl . "' target='_blank'>" . $resultFileUrl . "</a></div>";
+                    break;
+                }
+                else if ($status == "working")
+                {
+
+                    sleep(3);
+                }
+                else 
+                {
+                    echo $status . "<br/>";
+                    break;
+                }
+            }
+            while (true);
+        }
+        else
+        {
+            echo "<p>Error: " . $json["message"] . "</p>"; 
+        }
+    }
+    else
+    {
+        echo "<p>Status code: " . $status_code . "</p>"; 
+        echo "<p>" . $result . "</p>"; 
+    }
+}
+else
+{
+    echo "Error: " . curl_error($curl);
+}
+
+curl_close($curl);
+
+
+function CheckJobStatus($jobId, $apiKey)
+{
+    $status = null;
+    
+    $url = "https://api.pdf.co/v1/job/check";
+    
+    $parameters = array();
+    $parameters["jobid"] = $jobId;
+
+    $data = json_encode($parameters);
+
+    $curl = curl_init();
+    curl_setopt($curl, CURLOPT_HTTPHEADER, array("x-api-key: " . $apiKey, "Content-type: application/json"));
+    curl_setopt($curl, CURLOPT_URL, $url);
+    curl_setopt($curl, CURLOPT_POST, true);
+    curl_setopt($curl, CURLOPT_RETURNTRANSFER, 1);
+    curl_setopt($curl, CURLOPT_POSTFIELDS, $data);
+    
+    $result = curl_exec($curl);
+    
+    if (curl_errno($curl) == 0)
+    {
+        $status_code = curl_getinfo($curl, CURLINFO_HTTP_CODE);
+        
+        if ($status_code == 200)
+        {
+            $json = json_decode($result, true);
+        
+            if (!isset($json["error"]) || $json["error"] == false)
+            {
+                $status = $json["status"];
+            }
+            else
+            {
+                echo "<p>Error: " . $json["message"] . "</p>"; 
+            }
+        }
+        else
+        {
+            echo "<p>Status code: " . $status_code . "</p>"; 
+            echo "<p>" . $result . "</p>"; 
+        }
+    }
+    else
+    {
+        echo "Error: " . curl_error($curl);
+    }
+    
+    curl_close($curl);
+    
+    return $status;
+}
+
+
+
+echo "PDF saved at: $localFilePath<br>";
+echo "PDF URL: $fileUrl";
+
+echo "<a href='$fileUrl' target='_blank'>Open PDF</a>";
